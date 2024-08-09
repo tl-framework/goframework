@@ -115,7 +115,8 @@ func kafkaSendToDlq(
 	}
 	defer p.Close()
 
-	tpn := *msg.TopicPartition.Topic + "_error"
+	emsg := *msg
+	tpn := *emsg.TopicPartition.Topic + "_error"
 
 	CreateKafkaTopic(ctx, kcm, &TopicConfiguration{
 		Topic:             tpn,
@@ -129,26 +130,26 @@ func kafkaSendToDlq(
 	}
 
 	var content map[string]interface{}
-	if err := json.Unmarshal(msg.Value, &content); err != nil {
+	if err := json.Unmarshal(emsg.Value, &content); err != nil {
 		fmt.Print(err)
 	}
 
-	msg.TopicPartition.Topic = &tpn
-	msg.TopicPartition.Partition = kafka.PartitionAny
+	emsg.TopicPartition.Topic = &tpn
+	emsg.TopicPartition.Partition = kafka.PartitionAny
 	msgErr := &consumerError{
 		Error:   er.Error(),
 		Group:   fmt.Sprint(v),
 		Content: content,
 		Stack:   string(stack),
 	}
-	msgbkp := msg.Value
-	msg.Value, err = json.Marshal(msgErr)
+	msgbkp := emsg.Value
+	emsg.Value, err = json.Marshal(msgErr)
 	if err != nil {
-		msg.Value = msgbkp
+		emsg.Value = msgbkp
 	}
 
 	dlc := make(chan kafka.Event)
-	if er = p.Produce(msg, dlc); er != nil {
+	if er = p.Produce(&emsg, dlc); er != nil {
 		tm.AddStack(500, "ERROR TO PRODUCE ERROR MSG: "+er.Error())
 		panic(er)
 	}
