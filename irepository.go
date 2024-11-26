@@ -60,4 +60,8 @@ type IRepository[T interface{}] interface {
 		filter map[string]interface{},
 		fields interface{}) error
 	SetExpiredAfterInsert(ctx context.Context, seconds int32) error
+	FindOneAndUpdate(
+		ctx context.Context,
+		filter map[string]interface{},
+		fields map[string]interface{}) (*T, error)
 }

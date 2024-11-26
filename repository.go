@@ -413,6 +413,62 @@ func (r *MongoDbRepository[T]) Update(
 	return nil
 }
 
+func (r *MongoDbRepository[T]) FindOneAndUpdate(
+	ctx context.Context,
+	filter map[string]interface{},
+	fields map[string]interface{}) (*T, error) {
+
+	correlation := uuid.New()
+	if ctxCorrelation := GetContextHeader(ctx, XCORRELATIONID); ctxCorrelation != "" {
+		if id, err := uuid.Parse(ctxCorrelation); err == nil {
+			correlation = id
+		}
+	}
+
+	mt := r.monitoring.Start(correlation, r.sourceName, TracingTypeRepository)
+	mt.AddContent(fields)
+	mt.AddStack(100, "UPDATE")
+	mt.End()
+
+	if tenantId := GetContextHeader(ctx, XTENANTID, TTENANTID); tenantId != "" {
+		if tid, err := uuid.Parse(tenantId); err == nil {
+			filter["tenantId"] = tid
+		}
+	}
+	var setBson bson.M
+	_, obj, err := bson.MarshalValueWithRegistry(MongoRegistry, fields)
+	if err != nil {
+		return nil, err
+	}
+	bson.Unmarshal(obj, &setBson)
+
+	// setBson := structToBson(fields)
+	var history = make(map[string]interface{})
+	history["ActionAt"] = time.Now()
+	helperContext(ctx, history, map[string]string{"author": XAUTHOR, "authorId": XAUTHORID})
+
+	if os.Getenv("env") == "local" {
+		// _, obj, err := bson.MarshalValue(filter)
+		fmt.Print(bson.Raw(obj))
+	}
+
+	re := r.collection.FindOneAndUpdate(getContext(ctx),
+		filter, setBson, options.FindOneAndUpdate().SetReturnDocument(options.After))
+
+	switch re.Err() {
+	case nil:
+		var e T
+		if err := re.Decode(&e); err != nil {
+			return nil, err
+		}
+		return &e, nil
+	case mongo.ErrNoDocuments:
+		return nil, nil
+	default:
+		return nil, re.Err()
+	}
+}
+
 func (r *MongoDbRepository[T]) UpdateMany(
 	ctx context.Context,
 	filter map[string]interface{},
